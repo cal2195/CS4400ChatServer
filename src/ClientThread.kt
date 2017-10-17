@@ -61,6 +61,7 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
 
     private fun sendJoinedChatRoom(chatroom: String, clientName: String) {
         val message = "JOINED_CHATROOM: $chatroom\nSERVER_IP: ${clientSocket.localSocketAddress}\nPORT: ${clientSocket.localPort}\nROOM_REF: ${chatroom.hashCode()}\nJOIN_ID: ${clientName.hashCode()}\n"
+        sendMessage(message)
     }
 
     private fun sendError(errorCode: Int, errorMessage: String) {
