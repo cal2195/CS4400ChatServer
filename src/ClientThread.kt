@@ -72,7 +72,7 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
         return "${clientSocket.remoteSocketAddress}:${clientSocket.port}"
     }
 
-    private fun sendMessage(message: String) {
+    fun sendMessage(message: String) {
         outputStream.print(message)
         outputStream.flush()
     }
