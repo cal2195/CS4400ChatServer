@@ -2,6 +2,8 @@ import java.net.ServerSocket
 
 class MainServer(private val port: Int) {
 
+    val chatrooms = HashMap<Int, ChatRoom>()
+
     fun listen() {
         var serverSocket = ServerSocket(port)
         println("Server listening ton port $port")
@@ -17,6 +19,17 @@ class MainServer(private val port: Int) {
 
     fun shutdown() {
         System.exit(0)
+    }
+
+    fun joinChatRoom(clientThread: ClientThread, chatroomName: String, clientName: String) {
+        var chatroom = chatrooms[chatroomName.hashCode()]
+
+        if (chatroom == null) {
+            chatroom = ChatRoom(chatroomName)
+            chatrooms.put(chatroomName.hashCode(), chatroom)
+        }
+
+        chatroom.clients.put(clientName.hashCode(), clientThread)
     }
 }
 
