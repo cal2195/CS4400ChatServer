@@ -13,42 +13,63 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
 
     private fun listen() {
         while (true) {
-            var line = inputStream.readLine() ?: break
-            println("$this: $line")
+            var lines = readChunk(inputStream) ?: break
+            println("$this: $lines")
             when {
-                line == "KILL_SERVICE" -> mainServer.shutdown()
-                line.startsWith("HELO") -> sendHeloText(line)
-                else -> handleChatMessages(line.split(":"))
+                lines[0] == "KILL_SERVICE" -> mainServer.shutdown()
+                lines[0].startsWith("HELO") -> sendHeloText(lines[0])
+                else -> handleChatMessages(lines)
             }
         }
     }
 
+    private fun readChunk(inputStream: BufferedReader): List<String>? {
+        var line = inputStream.readLine()
+        var lines = ArrayList<String>()
+        while (line != null && line != "") {
+            lines.add(line)
+            line = inputStream.readLine()
+        }
+        return lines
+    }
+
     private fun handleChatMessages(messages: List<String>) {
-        if (messages.size > 1) {
+        if (messages.isEmpty()) {
             sendError(1, "Bad Message Sent To Server")
             return
         }
 
-        when (messages[0]) {
-            "JOIN_CHATROOM" -> joinChatRoom(messages)
+        when {
+            messages[0].startsWith("JOIN_CHATROOM") -> joinChatRoom(messages)
+            messages[0].startsWith("LEAVE_CHATROOM") -> leaveChatRoom(messages)
             else -> sendError(2, "Unknown Message Sent To Server")
         }
     }
 
-    private fun joinChatRoom(messages: List<String>) {
-        if (messages.size < 8) {
+    private fun leaveChatRoom(messages: List<String>) {
+        var hash = listToHashmap(messages)
+
+        if (hash["LEAVE_CHATROOM"] == null || hash["JOIN_ID"] == null || hash["CLIENT_NAME"] == null) {
             sendError(1, "Bad Message Sent To Server")
             return
         }
 
-        var chatroom: String? = null
-        var clientName: String? = null
-        for ((index, value) in messages.withIndex()) {
-            if (value.trim() == "JOIN_CHATROOM")
-                chatroom = messages[index + 1].trim()
-            if (value.trim() == "CLIENT_NAME")
-                clientName = messages[index + 1].trim()
+        var chatroom = mainServer.chatrooms[hash["LEAVE_CHATROOM"]!!.toInt()]
+        chatroom?.clients?.remove(hash["JOIN_ID"]!!.toInt())
+
+        sendLeftChatRoom(hash["LEAVE_CHATROOM"]!!, hash["JOIN_ID"]!!, hash["CLIENT_NAME"]!!)
+    }
+
+    private fun joinChatRoom(messages: List<String>) {
+        var hash = listToHashmap(messages)
+
+        if (hash["JOIN_CHATROOM"] == null || hash["CLIENT_NAME"] == null) {
+            sendError(1, "Bad Message Sent To Server")
+            return
         }
+
+        var chatroom: String? = hash["JOIN_CHATROOM"]
+        var clientName: String? = hash["CLIENT_NAME"]
 
         if (chatroom == null || clientName == null) {
             sendError(1, "Bad Message Sent To Server")
@@ -59,10 +80,23 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
         sendJoinedChatRoom(chatroom, clientName)
     }
 
+    private fun listToHashmap(lines: List<String>) : HashMap<String, String> {
+        var hash = HashMap<String, String>()
+        lines.map { it.split(":") }
+             .forEach { hash.put(it[0].trim(), it[1].trim()) }
+        return hash
+    }
+
     private fun sendJoinedChatRoom(chatroom: String, clientName: String) {
         val message = "JOINED_CHATROOM: $chatroom\nSERVER_IP: ${clientSocket.localSocketAddress}\nPORT: ${clientSocket.localPort}\nROOM_REF: ${chatroom.hashCode()}\nJOIN_ID: ${clientName.hashCode()}\n"
         sendMessage(message)
         mainServer.chatrooms[chatroom.hashCode()]?.sendMessage(clientName, "$clientName has joined the chat room")
+    }
+
+    private fun sendLeftChatRoom(chatroomRef: String, joinId: String, clientName: String) {
+        val message = "LEFT_CHATROOM: $chatroomRef\nJOIN_ID: $joinId\n"
+        sendMessage(message)
+        mainServer.chatrooms[chatroomRef.toInt()]?.sendMessage(clientName, "$clientName has left the chat room")
     }
 
     private fun sendError(errorCode: Int, errorMessage: String) {
