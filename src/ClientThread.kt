@@ -14,8 +14,10 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
     private fun listen() {
         while (true) {
             var lines = readChunk(inputStream) ?: continue
+            if (lines.isEmpty()) continue
+            println("[processing] $lines")
             when {
-                lines[0] == "KILL_SERVICE" -> mainServer.shutdown()
+                lines[0] == "KILL_SERVICE" -> { clientSocket.close(); mainServer.shutdown() }
                 lines[0].startsWith("HELO") -> sendHeloText(lines[0])
                 else -> handleChatMessages(lines)
             }
@@ -25,12 +27,16 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
     private fun readChunk(inputStream: BufferedReader): List<String>? {
         var expecting = 1
         var lines = ArrayList<String>()
-        while (expecting-- > 0) {
-            var line = inputStream.readLine()
+        while ((expecting == -1 && lines.last() != "") || expecting-- > 0) {
+            var line = inputStream.readLine() ?: break
             lines.add(line)
             println("[$this -> server] $line")
-            if (line.startsWith("JOIN_CHATROOM")) expecting = 3
-            else if (line.startsWith("LEAVE_CHATROOM")) expecting = 2
+            when {
+                line.startsWith("JOIN_CHATROOM") -> expecting = 3
+                line.startsWith("LEAVE_CHATROOM") -> expecting = 2
+                line.startsWith("CHAT") -> expecting = -1
+                line.startsWith("DISCONNECT") -> expecting = 2
+            }
         }
         return lines
     }
@@ -45,24 +51,32 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
             messages[0].startsWith("JOIN_CHATROOM") -> joinChatRoom(messages)
             messages[0].startsWith("LEAVE_CHATROOM") -> leaveChatRoom(messages)
             messages[0].startsWith("CHAT") -> sendChatMessage(messages)
+            messages[0].startsWith("DISCONNECT") -> disconnectClient(messages)
             else -> sendError(2, "Unknown Message Sent To Server")
+        }
+    }
+
+    private fun disconnectClient(messages: List<String>) {
+        var hash = listToHashmap(messages)
+        for (chatroom in mainServer.chatrooms) {
+            chatroom.value.disconnectClient(hash["CLIENT_NAME"]!!)
         }
     }
 
     private fun sendChatMessage(messages: List<String>) {
         var hash = messageListToHashmap(messages)
 
-        val roomRef = hash["CHAT"]
-        val joinId = hash["JOIN_ID"]
-        val clientName = hash["CLIENT_NAME"]
-        val message = hash["MESSAGE"]
+        val roomRef = hash["CHAT"]?.trim()
+        val joinId = hash["JOIN_ID"]?.trim()
+        val clientName = hash["CLIENT_NAME"]?.trim()
+        val message = hash["MESSAGE"]?.trim()
 
         if (roomRef == null || joinId == null || clientName == null || message == null) {
             sendError(1, "Bad Message Sent To Server")
             return
         }
 
-        
+        mainServer.chatrooms[roomRef.toInt()]?.sendMessage(clientName, message)
     }
 
     private fun leaveChatRoom(messages: List<String>) {
@@ -120,7 +134,7 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
                     message = parts[1]
                 }
             } else {
-                message += line
+                message += "\n $line"
             }
         }
 
@@ -139,6 +153,8 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
         val message = "LEFT_CHATROOM: $chatroomRef\nJOIN_ID: $joinId\n"
         sendMessage(message)
         mainServer.chatrooms[chatroomRef.toInt()]?.sendMessage(clientName, "$clientName has left the chat room")
+        val mess = "CHAT: $chatroomRef\nCLIENT_NAME: $clientName\nMESSAGE: $clientName has left the chat room\n\n"
+        sendMessage(mess)
     }
 
     private fun sendError(errorCode: Int, errorMessage: String) {
