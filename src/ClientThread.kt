@@ -13,8 +13,7 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
 
     private fun listen() {
         while (true) {
-            var lines = readChunk(inputStream) ?: break
-            println("$this: $lines")
+            var lines = readChunk(inputStream) ?: continue
             when {
                 lines[0] == "KILL_SERVICE" -> mainServer.shutdown()
                 lines[0].startsWith("HELO") -> sendHeloText(lines[0])
@@ -24,11 +23,14 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
     }
 
     private fun readChunk(inputStream: BufferedReader): List<String>? {
-        var line = inputStream.readLine()
+        var expecting = 1
         var lines = ArrayList<String>()
-        while (line != null && line != "") {
+        while (expecting-- > 0) {
+            var line = inputStream.readLine()
             lines.add(line)
-            line = inputStream.readLine()
+            println("[$this -> server] $line")
+            if (line.startsWith("JOIN_CHATROOM")) expecting = 3
+            else if (line.startsWith("LEAVE_CHATROOM")) expecting = 2
         }
         return lines
     }
@@ -42,8 +44,25 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
         when {
             messages[0].startsWith("JOIN_CHATROOM") -> joinChatRoom(messages)
             messages[0].startsWith("LEAVE_CHATROOM") -> leaveChatRoom(messages)
+            messages[0].startsWith("CHAT") -> sendChatMessage(messages)
             else -> sendError(2, "Unknown Message Sent To Server")
         }
+    }
+
+    private fun sendChatMessage(messages: List<String>) {
+        var hash = messageListToHashmap(messages)
+
+        val roomRef = hash["CHAT"]
+        val joinId = hash["JOIN_ID"]
+        val clientName = hash["CLIENT_NAME"]
+        val message = hash["MESSAGE"]
+
+        if (roomRef == null || joinId == null || clientName == null || message == null) {
+            sendError(1, "Bad Message Sent To Server")
+            return
+        }
+
+        
     }
 
     private fun leaveChatRoom(messages: List<String>) {
@@ -80,15 +99,38 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
         sendJoinedChatRoom(chatroom, clientName)
     }
 
-    private fun listToHashmap(lines: List<String>) : HashMap<String, String> {
+    private fun listToHashmap(lines: List<String>): HashMap<String, String> {
         var hash = HashMap<String, String>()
         lines.map { it.split(":") }
-             .forEach { hash.put(it[0].trim(), it[1].trim()) }
+                .forEach { hash.put(it[0].trim(), it[1].trim()) }
+        return hash
+    }
+
+    private fun messageListToHashmap(lines: List<String>): HashMap<String, String> {
+        var hash = HashMap<String, String>()
+
+        var message: String? = null
+
+        for (line in lines) {
+            if (message == null) {
+                val parts = line.split(":")
+                if (parts[0] != "MESSAGE") {
+                    hash.put(parts[0], parts[1])
+                } else {
+                    message = parts[1]
+                }
+            } else {
+                message += line
+            }
+        }
+
+        hash.put("MESSAGE", message!!)
+
         return hash
     }
 
     private fun sendJoinedChatRoom(chatroom: String, clientName: String) {
-        val message = "JOINED_CHATROOM: $chatroom\nSERVER_IP: ${clientSocket.localSocketAddress}\nPORT: ${clientSocket.localPort}\nROOM_REF: ${chatroom.hashCode()}\nJOIN_ID: ${clientName.hashCode()}\n"
+        val message = "JOINED_CHATROOM: $chatroom\nSERVER_IP: ${mainServer.ip}\nPORT: ${clientSocket.localPort}\nROOM_REF: ${chatroom.hashCode()}\nJOIN_ID: ${clientName.hashCode()}\n"
         sendMessage(message)
         mainServer.chatrooms[chatroom.hashCode()]?.sendMessage(clientName, "$clientName has joined the chat room")
     }
@@ -109,12 +151,13 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
     }
 
     fun sendMessage(message: String) {
+        println("[server -> $this] $message")
         outputStream.print(message)
         outputStream.flush()
     }
 
     private fun sendHeloText(line: String) {
-        outputStream.print("$line\nIP:" + clientSocket.localSocketAddress.toString() + "\nPort:" + clientSocket.localPort + "\nStudentID:14310822\n")
+        outputStream.print("$line\nIP:" + mainServer.ip + "\nPort:" + clientSocket.localPort + "\nStudentID:14310822\n")
         outputStream.flush()
     }
 }
