@@ -1,5 +1,9 @@
 # CS4400 Chat Server
 
+## About Me
+
+My name is **Cal Martin** and my student number is **14310822**. :)
+
 ## Setup
 
 Hi there! To run my chat server, you'll need the Kotlin Compiler!
