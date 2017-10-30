@@ -1,12 +1,15 @@
 import java.net.ServerSocket
 
-class MainServer(val ip: String, private val port: Int) {
+class MainServer(var ip: String?, private val port: Int) {
 
     val chatrooms = HashMap<Int, ChatRoom>()
 
     fun listen() {
         var serverSocket = ServerSocket(port)
-        println("Server listening on port $port")
+        if (ip == null) {
+            ip = serverSocket.inetAddress.hostAddress
+        }
+        println("Server listening on $ip:$port")
         while (true) {
             println("Waiting for new client")
             var clientSocket = serverSocket.accept()
@@ -34,6 +37,18 @@ class MainServer(val ip: String, private val port: Int) {
 }
 
 fun main(args: Array<String>) {
+    if (args.size == 1) {
+        var mainServer = MainServer(null, args[0].toInt())
+        mainServer.listen()
+        return
+    }
+
+    if (args.size == 2) {
+        var mainServer = MainServer(args[0], args[1].toInt())
+        mainServer.listen()
+        return
+    }
+
     var mainServer = MainServer("86.44.163.146", 2195)
     mainServer.listen()
 }
