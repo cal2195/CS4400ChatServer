@@ -1,26 +1,37 @@
 import java.net.ServerSocket
+import java.net.Socket
 
 class MainServer(var ip: String?, private val port: Int) {
 
     val chatrooms = HashMap<Int, ChatRoom>()
+    var sockets = ArrayList<Socket>()
+    lateinit var serverSocket: ServerSocket
 
     fun listen() {
-        var serverSocket = ServerSocket(port)
+        serverSocket = ServerSocket(port)
         if (ip == null) {
             ip = serverSocket.inetAddress.hostAddress
         }
         println("Server listening on $ip:$port")
-        while (true) {
-            println("Waiting for new client")
-            var clientSocket = serverSocket.accept()
-            println("Client accepted!")
+        try {
+            while (true) {
+                println("Waiting for new client")
+                var clientSocket = serverSocket.accept()
+                println("Client accepted!")
 
-            var clientThread = Thread(ClientThread(clientSocket, this))
-            clientThread.start()
+                sockets.add(clientSocket)
+                var clientThread = Thread(ClientThread(clientSocket, this))
+                clientThread.start()
+            }
+        } catch (e: Exception) {
         }
     }
 
     fun shutdown() {
+        serverSocket.close()
+        sockets
+                .filter { it.isConnected }
+                .forEach { it.close() }
         System.exit(0)
     }
 

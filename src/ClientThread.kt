@@ -17,7 +17,7 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
             if (lines.isEmpty()) continue
             println("[processing] $lines")
             when {
-                lines[0] == "KILL_SERVICE" -> { clientSocket.close(); mainServer.shutdown() }
+                lines[0] == "KILL_SERVICE" -> mainServer.shutdown()
                 lines[0].startsWith("HELO") -> sendHeloText(lines[0])
                 else -> handleChatMessages(lines)
             }
@@ -28,14 +28,18 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
         var expecting = 1
         var lines = ArrayList<String>()
         while ((expecting == -1 && lines.last() != "") || expecting-- > 0) {
-            var line = inputStream.readLine() ?: break
-            lines.add(line)
-            println("[$this -> server] $line")
-            when {
-                line.startsWith("JOIN_CHATROOM") -> expecting = 3
-                line.startsWith("LEAVE_CHATROOM") -> expecting = 2
-                line.startsWith("CHAT") -> expecting = -1
-                line.startsWith("DISCONNECT") -> expecting = 2
+            try {
+                var line = inputStream.readLine() ?: break
+                lines.add(line)
+                println("[$this -> server] $line")
+                when {
+                    line.startsWith("JOIN_CHATROOM") -> expecting = 3
+                    line.startsWith("LEAVE_CHATROOM") -> expecting = 2
+                    line.startsWith("CHAT") -> expecting = -1
+                    line.startsWith("DISCONNECT") -> expecting = 2
+                }
+            } catch (e: Exception) {
+                //e.printStackTrace()
             }
         }
         return lines
@@ -58,7 +62,7 @@ class ClientThread(var clientSocket: Socket, var mainServer: MainServer) : Runna
 
     private fun disconnectClient(messages: List<String>) {
         var hash = listToHashmap(messages)
-        for (chatroom in mainServer.chatrooms) {
+        for (chatroom in mainServer.chatrooms.toSortedMap()) {
             chatroom.value.disconnectClient(hash["CLIENT_NAME"]!!)
         }
     }
